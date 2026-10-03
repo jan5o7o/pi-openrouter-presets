@@ -76,8 +76,18 @@ interface PresetVersion {
 	system_prompt?: string | null;
 	config?: {
 		model?: string;
+		/** Server-side provider routing the preset applies to every request. */
+		provider?: PresetProviderRouting;
 		[key: string]: unknown;
 	};
+}
+
+/** Provider routing block of a preset version config. */
+interface PresetProviderRouting {
+	/** Provider slugs the preset restricts routing to. */
+	only?: unknown;
+	order?: unknown;
+	allow_fallbacks?: unknown;
 }
 
 interface PresetDetail extends PresetSummary {
@@ -93,6 +103,50 @@ interface GetPresetResponse {
 	data?: PresetDetail;
 }
 
+/** Pricing block of a model endpoint. Values are dollars per token, as strings. */
+interface EndpointPricing {
+	prompt?: string | number | null;
+	completion?: string | number | null;
+	input_cache_read?: string | number | null;
+	input_cache_write?: string | number | null;
+}
+
+/** One provider endpoint of a model, as returned by `/models/{id}/endpoints`. */
+interface OpenRouterEndpoint {
+	tag?: string;
+	name?: string;
+	provider_name?: string;
+	quantization?: string | null;
+	pricing?: EndpointPricing | null;
+	uptime_last_1d?: number | null;
+}
+
+interface EndpointsResponse {
+	data?: { id?: string; endpoints?: OpenRouterEndpoint[] };
+}
+
+/** A live endpoint price and quality, normalised to dollars per million tokens. */
+interface EndpointSummary {
+	tag: string;
+	providerName?: string;
+	input?: number;
+	output?: number;
+	cacheRead?: number;
+	cacheWrite?: number;
+	quantization?: string;
+	uptime1d?: number;
+}
+
+/** Interquartile mean price across every listed endpoint of a base model. */
+interface EndpointAverage {
+	/** Number of endpoints the summary covers. */
+	endpoints: number;
+	input?: number;
+	output?: number;
+	cacheRead?: number;
+	cacheWrite?: number;
+}
+
 /** Per-preset info kept for the `/presets` command and the status line. */
 interface PresetInfo {
 	slug: string;
@@ -100,6 +154,16 @@ interface PresetInfo {
 	baseModelId?: string;
 	status?: string;
 	modelId: string;
+	/** Provider slugs the preset pins routing to (`provider.only`). */
+	routeSlugs?: string[];
+	/** Live price of the endpoint the preset routes to, or the cheapest one when unpinned. */
+	route?: EndpointSummary;
+	/** Mean price across every provider listed for the base model. */
+	modelAverage?: EndpointAverage;
+	/** True when the route was picked automatically because the preset pins no provider. */
+	routeAuto?: boolean;
+	/** True when the preset pins providers that the base model no longer lists. */
+	routeMissing?: boolean;
 }
 
 // =============================================================================
@@ -151,6 +215,87 @@ async function getJson<T>(url: string, apiKey: string, signal: AbortSignal): Pro
 		throw new Error(`${url} -> HTTP ${response.status}${body ? `: ${body.slice(0, 200)}` : ""}`);
 	}
 	return (await response.json()) as T;
+}
+
+/** Convert an OpenRouter per-token price string to dollars per million tokens. */
+function perMillion(value: string | number | null | undefined): number | undefined {
+	const parsed =
+		typeof value === "number" ? value : typeof value === "string" ? Number.parseFloat(value) : Number.NaN;
+	return Number.isFinite(parsed) ? parsed * 1_000_000 : undefined;
+}
+
+/** The routing slug of an endpoint tag: `decart/fp4` -> `decart`. */
+function endpointSlug(tag: string): string {
+	return tag.split("/")[0].toLowerCase();
+}
+
+/** Cheapest by the sum of input and output price, used to pick between service tiers. */
+function endpointCost(endpoint: OpenRouterEndpoint): number {
+	return (perMillion(endpoint.pricing?.prompt) ?? 0) + (perMillion(endpoint.pricing?.completion) ?? 0);
+}
+
+function cheapestEndpoint(endpoints: OpenRouterEndpoint[]): OpenRouterEndpoint | undefined {
+	return endpoints.reduce<OpenRouterEndpoint | undefined>(
+		(best, endpoint) => (best === undefined || endpointCost(endpoint) < endpointCost(best) ? endpoint : best),
+		undefined,
+	);
+}
+
+/** The endpoint a preset routes to, matching `provider.only` against the tag prefix. */
+function pinEndpoint(endpoints: OpenRouterEndpoint[], slugs: string[]): OpenRouterEndpoint | undefined {
+	const wanted = new Set(slugs.map((slug) => slug.toLowerCase()));
+	const matches = endpoints.filter((endpoint) => endpoint.tag && wanted.has(endpointSlug(endpoint.tag)));
+	return cheapestEndpoint(matches);
+}
+
+function endpointSummary(endpoint: OpenRouterEndpoint): EndpointSummary {
+	const pricing = endpoint.pricing ?? {};
+	const summary: EndpointSummary = {
+		tag: endpoint.tag ?? endpoint.name ?? "unknown",
+		input: perMillion(pricing.prompt),
+		output: perMillion(pricing.completion),
+		cacheRead: perMillion(pricing.input_cache_read),
+		cacheWrite: perMillion(pricing.input_cache_write),
+	};
+	if (endpoint.provider_name) summary.providerName = endpoint.provider_name;
+	if (endpoint.quantization) summary.quantization = endpoint.quantization;
+	if (typeof endpoint.uptime_last_1d === "number") summary.uptime1d = endpoint.uptime_last_1d;
+	return summary;
+}
+
+/** Mean of the values between the 25th and 75th percentile, discarding outlier providers. */
+function interquartileMean(values: number[]): number | undefined {
+	if (values.length === 0) return undefined;
+	if (values.length <= 3) return values.reduce((total, value) => total + value, 0) / values.length;
+	const sorted = [...values].sort((left, right) => left - right);
+	const start = Math.floor(sorted.length * 0.25);
+	const end = Math.ceil(sorted.length * 0.75);
+	const middle = sorted.slice(start, end);
+	return middle.reduce((total, value) => total + value, 0) / middle.length;
+}
+
+/** Interquartile-mean price across every endpoint listed for a base model. */
+function interquartileEndpointPrices(endpoints: OpenRouterEndpoint[]): EndpointAverage | undefined {
+	if (endpoints.length === 0) return undefined;
+	const trim = (pick: (endpoint: OpenRouterEndpoint) => number | undefined): number | undefined =>
+		interquartileMean(
+			endpoints.map(pick).filter((value): value is number => value !== undefined),
+		);
+	return {
+		endpoints: endpoints.length,
+		input: trim((endpoint) => perMillion(endpoint.pricing?.prompt)),
+		output: trim((endpoint) => perMillion(endpoint.pricing?.completion)),
+		cacheRead: trim((endpoint) => perMillion(endpoint.pricing?.input_cache_read)),
+		cacheWrite: trim((endpoint) => perMillion(endpoint.pricing?.input_cache_write)),
+	};
+}
+
+/** Provider slugs a preset pins with `provider.only`, if they are plain strings. */
+function routeSlugsOf(detail: PresetDetail | undefined): string[] {
+	const only = detail?.designated_version?.config?.provider?.only;
+	if (typeof only === "string") return [only];
+	if (!Array.isArray(only)) return [];
+	return only.filter((entry): entry is string => typeof entry === "string" && entry.length > 0);
 }
 
 /** Run `worker` over `items` with bounded concurrency, preserving input order. */
@@ -226,14 +371,38 @@ function buildPresetModel(
 	return model;
 }
 
-function infoFromDetail(preset: PresetSummary, detail: PresetDetail | undefined, modelId: string): PresetInfo {
-	return {
+function infoFromDetail(
+	preset: PresetSummary,
+	detail: PresetDetail | undefined,
+	modelId: string,
+	endpointsByModel?: Map<string, OpenRouterEndpoint[]>,
+): PresetInfo {
+	const baseModelId = detail?.designated_version?.config?.model;
+	const routeSlugs = routeSlugsOf(detail);
+	const pinned = routeSlugs.length > 0;
+	const endpoints = baseModelId ? endpointsByModel?.get(baseModelId) : undefined;
+	const endpoint = endpoints?.length
+		? pinned
+			? pinEndpoint(endpoints, routeSlugs)
+			: cheapestEndpoint(endpoints)
+		: undefined;
+
+	const info: PresetInfo = {
 		slug: preset.slug,
 		name: preset.name,
-		baseModelId: detail?.designated_version?.config?.model,
+		baseModelId,
 		status: preset.status ?? undefined,
 		modelId,
 	};
+	if (pinned) info.routeSlugs = routeSlugs;
+	if (endpoints?.length) info.modelAverage = interquartileEndpointPrices(endpoints);
+	if (endpoint) {
+		info.route = endpointSummary(endpoint);
+		if (!pinned) info.routeAuto = true;
+	} else if (pinned && endpoints && endpoints.length > 0) {
+		info.routeMissing = true;
+	}
+	return info;
 }
 
 /**
@@ -261,12 +430,35 @@ async function loadPresets(
 		}
 	});
 
+	// Live pricing: one endpoints request per distinct base model, best-effort. A
+	// failure only drops prices from the listing, never the presets themselves.
+	const baseIds = [
+		...new Set(
+			details
+				.map((detail) => detail?.designated_version?.config?.model)
+				.filter((id): id is string => typeof id === "string" && id.length > 0),
+		),
+	];
+	const endpointsByModel = new Map<string, OpenRouterEndpoint[]>();
+	await mapConcurrent(baseIds, DETAIL_CONCURRENCY, async (baseId) => {
+		try {
+			const body = await getJson<EndpointsResponse>(
+				`${API_BASE_URL}/models/${baseId.split("/").map(encodeURIComponent).join("/")}/endpoints`,
+				apiKey,
+				signal,
+			);
+			endpointsByModel.set(baseId, body.data?.endpoints ?? []);
+		} catch (error) {
+			debug("endpoints failed", baseId, error);
+		}
+	});
+
 	const models: Model<Api>[] = [];
 	const info: PresetInfo[] = [];
 	for (let index = 0; index < presets.length; index++) {
 		const model = buildPresetModel(baseModels, presets[index], details[index]);
 		models.push(model);
-		info.push(infoFromDetail(presets[index], details[index], model.id));
+		info.push(infoFromDetail(presets[index], details[index], model.id, endpointsByModel));
 	}
 	return { models, info };
 }
@@ -368,16 +560,69 @@ async function refreshPresets(
 	}
 }
 
+/** Dollars per million tokens, trimmed to the precision a price actually needs. */
+function money(value: number | undefined): string {
+	if (value === undefined || !Number.isFinite(value)) return "?";
+	if (value === 0) return "free";
+	if (value < 1) return `$${value.toFixed(6).replace(/0+$/, "").replace(/\.$/, "")}`;
+	return `$${value.toFixed(2)}`;
+}
+
+/** Same as `money`, but rounded — an average does not deserve six decimals. */
+function moneyApprox(value: number | undefined): string {
+	if (value === undefined || !Number.isFinite(value)) return "?";
+	return money(Number(value.toFixed(value < 1 ? 4 : 2)));
+}
+
+/** The live price line shown under one preset, or undefined when no price is known. */
+function formatPresetPrice(info: PresetInfo): string | undefined {
+	if (!info.route) {
+		if (info.routeMissing) {
+			return `  price unavailable: ${info.baseModelId} lists no ${info.routeSlugs?.join("/")} endpoint`;
+		}
+		return undefined;
+	}
+	const route = info.route;
+	const parts = [`in ${money(route.input)}`, `out ${money(route.output)}`];
+	if (route.cacheRead !== undefined) parts.push(`cache-read ${money(route.cacheRead)}`);
+	if (route.cacheWrite !== undefined) parts.push(`cache-write ${money(route.cacheWrite)}`);
+	const meta = [info.routeAuto ? `cheapest ${route.tag}` : route.tag];
+	if (route.quantization && route.quantization !== "unknown") meta.push(route.quantization);
+	if (route.uptime1d !== undefined) meta.push(`${route.uptime1d.toFixed(2)}% up`);
+	return `  price/M: ${parts.join(" · ")} | ${meta.join(" · ")}`;
+}
+
+/** The mean price across the base model's providers, shown under the routed price. */
+function formatModelAverage(info: PresetInfo): string | undefined {
+	const average = info.modelAverage;
+	// A single provider means the average would just repeat the routed price.
+	if (!average || average.endpoints <= 1) return undefined;
+	const parts: string[] = [];
+	if (average.input !== undefined) parts.push(`in ${moneyApprox(average.input)}`);
+	if (average.output !== undefined) parts.push(`out ${moneyApprox(average.output)}`);
+	if (average.cacheRead !== undefined) parts.push(`cache-read ${moneyApprox(average.cacheRead)}`);
+	if (average.cacheWrite !== undefined) parts.push(`cache-write ${moneyApprox(average.cacheWrite)}`);
+	if (parts.length === 0) return undefined;
+	return `  model avg/M (${average.endpoints} endpoints, interquartile): ${parts.join(" · ")}`;
+}
+
 function formatPresets(): string {
 	if (lastError) return `OpenRouter presets unavailable: ${lastError}`;
 	if (presetInfo.length === 0) return "No OpenRouter presets found for this account.";
-	return presetInfo
-		.map((entry) => {
-			const base = entry.baseModelId ? ` -> ${entry.baseModelId}` : "";
-			const status = entry.status && entry.status !== "active" ? ` [${entry.status}]` : "";
-			return `${PROVIDER_ID}/${entry.modelId}${base}${status}`;
-		})
-		.join("\n");
+	const lines = presetInfo.map((entry) => {
+		const base = entry.baseModelId ? ` -> ${entry.baseModelId}` : "";
+		const status = entry.status && entry.status !== "active" ? ` [${entry.status}]` : "";
+		const price = formatPresetPrice(entry);
+		const average = formatModelAverage(entry);
+		const detail = [price, average].filter((line): line is string => line !== undefined).join("\n");
+		return `${PROVIDER_ID}/${entry.modelId}${base}${status}${detail ? `\n${detail}` : ""}`;
+	});
+	const fetched =
+		presetInfo.some((entry) => entry.route) && lastFetchAt
+			? new Date(lastFetchAt).toLocaleTimeString()
+			: undefined;
+	const header = fetched ? `Live OpenRouter prices (fetched ${fetched}, per million tokens):\n\n` : "";
+	return `${header}${lines.join("\n")}`;
 }
 
 // =============================================================================

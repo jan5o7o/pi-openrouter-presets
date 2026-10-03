@@ -9,6 +9,13 @@
     "type": "git",
     "url": "git+https://github.com/jan5o7o/pi-openrouter-presets.git"
   },
+  "homepage": "https://github.com/jan5o7o/pi-openrouter-presets#readme",
+  "bugs": {
+    "url": "https://github.com/jan5o7o/pi-openrouter-presets/issues"
+  },
+  "engines": {
+    "node": ">=20"
+  },
   "keywords": [
     "pi-package",
     "pi",
@@ -26,6 +33,9 @@
     "README.md",
     "LICENSE"
   ],
+  "publishConfig": {
+    "access": "public"
+  },
   "peerDependencies": {
     "@earendil-works/pi-ai": "*",
     "@earendil-works/pi-coding-agent": "*"

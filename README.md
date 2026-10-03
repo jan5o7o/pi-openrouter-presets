@@ -16,6 +16,12 @@ routing, and parameters on its side.
 
 ## Install
 
+From npm (recommended):
+
+```bash
+pi install npm:pi-openrouter-presets
+```
+
 From git:
 
 ```bash
@@ -33,6 +39,8 @@ Or try it for a single run without installing:
 ```bash
 pi -e ./pi-openrouter-presets
 ```
+
+Remove it again with `pi remove npm:pi-openrouter-presets`.
 
 ## Use
 

@@ -1,0 +1,54 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="630" viewBox="0 0 1200 630" role="img" aria-labelledby="title desc">
+  <title id="title">pi-openrouter-presets in Pi</title>
+  <desc id="desc">Pi's /presets command listing OpenRouter presets with live provider prices per million tokens and an interquartile model average.</desc>
+
+  <defs>
+    <linearGradient id="wash" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#1f6feb" stop-opacity="0.20"/>
+      <stop offset="0.55" stop-color="#0d1117" stop-opacity="0"/>
+      <stop offset="1" stop-color="#238636" stop-opacity="0.14"/>
+    </linearGradient>
+    <style>
+      .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "DejaVu Sans Mono", monospace; }
+      .dim  { fill: #8b949e; }
+      .body { fill: #c9d1d9; }
+      .path { fill: #79c0ff; }
+      .ok   { fill: #7ee787; }
+      .name { fill: #e6edf3; }
+    </style>
+  </defs>
+
+  <rect width="1200" height="630" fill="#0d1117"/>
+  <rect width="1200" height="630" fill="url(#wash)"/>
+
+  <rect x="0" y="0" width="1200" height="64" fill="#161b22"/>
+  <line x1="0" y1="64.5" x2="1200" y2="64.5" stroke="#30363d"/>
+
+  <circle cx="40" cy="32" r="7" fill="#ff5f56"/>
+  <circle cx="64" cy="32" r="7" fill="#ffbd2e"/>
+  <circle cx="88" cy="32" r="7" fill="#27c93f"/>
+  <text class="mono dim" x="120" y="38" font-size="17">pi-openrouter-presets</text>
+  <text class="mono dim" x="1160" y="38" font-size="17" text-anchor="end">/presets</text>
+
+  <g class="mono" font-size="19" xml:space="preserve">
+    <text class="ok"   x="52" y="122">$</text>
+    <text class="name" x="70" y="122">pi</text>
+
+    <text class="name" x="52" y="158">&gt; /presets</text>
+
+    <text class="dim"  x="52" y="206">Live OpenRouter prices (fetched 1:06 AM, per million tokens):</text>
+
+    <text class="path" x="52" y="256">openrouter-presets/@preset/ec-dp4-decart -&gt; deepseek/deepseek-v4.1-flash</text>
+    <text class="body" x="52" y="290">  price/M: in $0.09 · out $0.18 · cache-read $0.018 | decart/fp4 · fp4 · 99.98% up</text>
+    <text class="dim"  x="52" y="324">  model avg/M (31 endpoints, interquartile): in $0.1919 · out $0.8382</text>
+
+    <text class="path" x="52" y="378">openrouter-presets/@preset/ec-dp4f0731 -&gt; deepseek/deepseek-v4-flash-0731</text>
+    <text class="body" x="52" y="412">  price/M: in $0.06 · out $0.18 · cache-read $0.015 | deepinfra/fp8 · fp8 · 99.84% up</text>
+
+    <text class="path" x="52" y="466">openrouter-presets/@preset/ec-dp4vision-infra -&gt; deepseek/deepseek-v4-flash-vision-exp</text>
+    <text class="body" x="52" y="500">  price/M: in $0.2156 · out $0.6468 · cache-read $0.00686 | deepinfra/fp8 · fp8 · 99.63% up</text>
+
+    <text class="ok"   x="52" y="576">$</text>
+    <text class="dim"  x="70" y="576">pi install npm:pi-openrouter-presets</text>
+  </g>
+</svg>

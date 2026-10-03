@@ -1,7 +1,7 @@
 {
   "name": "pi-openrouter-presets",
-  "version": "0.2.0",
-  "description": "Use OpenRouter presets (@preset/<slug>) as first-class models in Pi.",
+  "version": "0.2.1",
+  "description": "Use OpenRouter presets (@preset/<slug>) as first-class models in Pi, with live provider pricing in /presets.",
   "type": "module",
   "license": "MIT",
   "author": "jan5o7o",
@@ -26,7 +26,8 @@
   "pi": {
     "extensions": [
       "./extensions/index.ts"
-    ]
+    ],
+    "image": "https://raw.githubusercontent.com/jan5o7o/pi-openrouter-presets/main/assets/preview.svg"
   },
   "files": [
     "extensions",

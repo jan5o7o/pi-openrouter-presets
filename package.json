@@ -1,0 +1,33 @@
+{
+  "name": "pi-openrouter-presets",
+  "version": "0.1.0",
+  "description": "Use OpenRouter presets (@preset/<slug>) as first-class models in Pi.",
+  "type": "module",
+  "license": "MIT",
+  "author": "jan5o7o",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/jan5o7o/pi-openrouter-presets.git"
+  },
+  "keywords": [
+    "pi-package",
+    "pi",
+    "openrouter",
+    "presets",
+    "coding-agent"
+  ],
+  "pi": {
+    "extensions": [
+      "./extensions/index.ts"
+    ]
+  },
+  "files": [
+    "extensions",
+    "README.md",
+    "LICENSE"
+  ],
+  "peerDependencies": {
+    "@earendil-works/pi-ai": "*",
+    "@earendil-works/pi-coding-agent": "*"
+  }
+}

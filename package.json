@@ -1,6 +1,6 @@
 {
   "name": "pi-openrouter-presets",
-  "version": "0.2.1",
+  "version": "0.2.2",
   "description": "Use OpenRouter presets (@preset/<slug>) as first-class models in Pi, with live provider pricing in /presets.",
   "type": "module",
   "license": "MIT",
